@@ -2285,6 +2285,8 @@ updatebars(void) {
 		.background_pixmap = ParentRelative,
 		.event_mask = ButtonPressMask|ExposureMask
 	};
+	Atom net_wm_type_dock = XInternAtom(dpy, "_NET_WM_WINDOW_TYPE_DOCK", False);
+
 	for(m = mons; m; m = m->next) {
 		w = m->ww;
 		if(showsystray && m == selmon)
@@ -2292,6 +2294,9 @@ updatebars(void) {
 		m->barwin = XCreateWindow(dpy, root, m->wx, m->by, w, bh, 0, DefaultDepth(dpy, screen),
 		                          CopyFromParent, DefaultVisual(dpy, screen),
 		                          CWOverrideRedirect|CWBackPixmap|CWEventMask, &wa);
+		/* mark it as a dock window, for proper compositing */
+		XChangeProperty(dpy, m->barwin, netatom[NetWMWindowType], XA_ATOM, 32,
+		                PropModeReplace, (unsigned char*)&net_wm_type_dock, 1);
 		XDefineCursor(dpy, m->barwin, cursor[CurNormal]);
 		XMapRaised(dpy, m->barwin);
 	}
