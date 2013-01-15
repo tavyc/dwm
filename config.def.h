@@ -8,6 +8,19 @@ static const char normfgcolor[]     = "#bbbbbb";
 static const char selbordercolor[]  = "#005577";
 static const char selbgcolor[]      = "#005577";
 static const char selfgcolor[]      = "#eeeeee";
+static const char* colors[NumColors][ColLast] = {
+	// border          foreground   background
+	{ normbordercolor, normfgcolor, normbgcolor },  // normal
+	{ selbordercolor,  selfgcolor,  selbgcolor  },  // selected
+
+	{ normbordercolor, selbgcolor,  selfgcolor  },  // warning
+	{ normbordercolor, "#ffffff",   "#ff0000"   },  // error
+	{ normbordercolor, "#7598b2",   normbgcolor },  // delim
+
+        { normbordercolor, "#b10000",   normbgcolor },  // hot
+	{ normbordercolor, "#b15c00",   normbgcolor },  // medium
+	{ normbordercolor, "#6cb100",   normbgcolor },  // cool
+};
 static const unsigned int borderpx  = 1;        /* border pixel of windows */
 static const unsigned int snap      = 32;       /* snap pixel */
 static const unsigned int systrayspacing = 2;   /* systray spacing */
@@ -94,6 +107,7 @@ static Button buttons[] = {
 	/* click                event mask      button          function        argument */
 	{ ClkLtSymbol,          0,              Button1,        setlayout,      {0} },
 	{ ClkLtSymbol,          0,              Button3,        setlayout,      {.v = &layouts[2]} },
+	{ ClkWinTitle,          0,              Button1,        focusonclick,   {0} },
 	{ ClkWinTitle,          0,              Button2,        zoom,           {0} },
 	{ ClkStatusText,        0,              Button2,        spawn,          {.v = termcmd } },
 	{ ClkClientWin,         MODKEY,         Button1,        movemouse,      {0} },

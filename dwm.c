@@ -54,6 +54,7 @@
 #define HEIGHT(X)               ((X)->h + 2 * (X)->bw)
 #define TAGMASK                 ((1 << LENGTH(tags)) - 1)
 #define TEXTW(X)                (textnw(X, strlen(X)) + dc.font.height)
+#define drawtext(text, col, invert)         drawtext2(text, col, invert, True)
 
 #define SYSTEM_TRAY_REQUEST_DOCK    0
 #define _NET_SYSTEM_TRAY_ORIENTATION_HORZ 0
@@ -161,6 +162,8 @@ struct Monitor {
 	Monitor *next;
 	Window barwin;
 	const Layout *lt[2];
+	int titlebarbegin;
+	int titlebarend;
 };
 
 typedef struct {
@@ -177,6 +180,8 @@ struct Systray {
 	Window win;
 	Client *icons;
 };
+
+enum { ColNorm, ColSel, ColUrg, ColErr, ColDelim, ColHot, ColMed, ColCool, NumColors };
 
 /* function declarations */
 static void applyrules(Client *c);
@@ -203,10 +208,13 @@ static Monitor *dirtomon(int dir);
 static void drawbar(Monitor *m);
 static void drawbars(void);
 static void drawsquare(Bool filled, Bool empty, Bool invert, unsigned long col[ColLast]);
-static void drawtext(const char *text, unsigned long col[ColLast], Bool invert);
+static void drawtext2(const char *text, unsigned long col[ColLast], Bool invert, Bool pad);
+static void drawvline(unsigned long col[ColLast]);
+static void drawcoloredtext(Monitor *m, char *text);
 static void enternotify(XEvent *e);
 static void expose(XEvent *e);
 static void focus(Client *c);
+static void focusonclick(const Arg *arg);
 static void focusin(XEvent *e);
 static void focusmon(const Arg *arg);
 static void focusstack(const Arg *arg);
@@ -320,6 +328,7 @@ static Display *dpy;
 static DC dc;
 static Monitor *mons = NULL, *selmon = NULL;
 static Window root;
+unsigned long barcolors[NumColors][ColLast];
 
 /* configuration, allows nested code to access above variables */
 #include "config.h"
@@ -486,10 +495,12 @@ buttonpress(XEvent *e) {
 		}
 		else if(ev->x < x + blw)
 			click = ClkLtSymbol;
-		else if(ev->x > selmon->ww - TEXTW(stext))
+		else if(ev->x > selmon->titlebarend)
 			click = ClkStatusText;
-		else
+		else {
+			arg.ui = ev->x;
 			click = ClkWinTitle;
+		}
 	}
 	else if((c = wintoclient(ev->window))) {
 		focus(c);
@@ -498,7 +509,7 @@ buttonpress(XEvent *e) {
 	for(i = 0; i < LENGTH(buttons); i++)
 		if(click == buttons[i].click && buttons[i].func && buttons[i].button == ev->button
 		&& CLEANMASK(buttons[i].mask) == CLEANMASK(ev->state))
-			buttons[i].func(click == ClkTagBar && buttons[i].arg.i == 0 ? &arg : &buttons[i].arg);
+			buttons[i].func((click == ClkTagBar || click == ClkWinTitle) && buttons[i].arg.i == 0 ? &arg : &buttons[i].arg);
 }
 
 void
@@ -803,24 +814,29 @@ dirtomon(int dir) {
 
 void
 drawbar(Monitor *m) {
-	int x;
-	unsigned int i, occ = 0, urg = 0;
+	int x, a= 0, s= 0, ow, mw = 0, extra, tw;
+	char posbuf[10];
+	unsigned int i, n = 0, occ = 0, urg = 0;
 	unsigned long *col;
-	Client *c;
+	Client *c, *firstvis, *lastvis = NULL;
+	DC seldc;
 
 	resizebarwin(m);
 	for(c = m->clients; c; c = c->next) {
+		if(ISVISIBLE(c))
+                        n++;
 		occ |= c->tags;
 		if(c->isurgent)
 			urg |= c->tags;
 	}
+
 	dc.x = 0;
 	for(i = 0; i < LENGTH(tags); i++) {
 		dc.w = TEXTW(tags[i]);
 		col = m->tagset[m->seltags] & 1 << i ? dc.sel : dc.norm;
 		drawtext(tags[i], col, urg & 1 << i);
 		drawsquare(m == selmon && selmon->sel && selmon->sel->tags & 1 << i,
-		           occ & 1 << i, urg & 1 << i, col);
+			   occ & 1 << i, urg & 1 << i, col);
 		dc.x += dc.w;
 	}
 	dc.w = blw = TEXTW(m->ltsymbol);
@@ -828,7 +844,27 @@ drawbar(Monitor *m) {
 	dc.x += dc.w;
 	x = dc.x;
 	if(m == selmon) { /* status is only drawn on selected monitor */
-		dc.w = TEXTW(stext);
+		if(m->lt[m->sellt]->arrange == monocle){
+			  dc.x= x;
+			  for(c= nexttiled(m->clients), a= 0, s= 0; c; c= nexttiled(c->next), a++)
+				if(c == m->stack)
+					s = a;
+			  if(!s && a)
+				s = a;
+			  snprintf(posbuf, LENGTH(posbuf), "[%d/%d]", s, a);
+			  dc.w= TEXTW(posbuf);
+			  drawtext(posbuf, dc.norm, False);
+			  x= dc.x + dc.w;
+		}
+
+		dc.w=0;
+		char *buf = stext, *ptr = buf;
+		while( *ptr ) {
+			for( i = 0; *ptr < 0 || *ptr > NumColors; i++, ptr++);
+			dc.w += textnw(buf,i);
+			buf=++ptr;
+		}
+		dc.w+=dc.font.height;
 		dc.x = m->ww - dc.w;
 		if(showsystray && m == selmon) {
 			dc.x -= getsystraywidth();
@@ -837,20 +873,69 @@ drawbar(Monitor *m) {
 			dc.x = x;
 			dc.w = m->ww - x;
 		}
-		drawtext(stext, dc.norm, False);
+		m->titlebarend=dc.x;
+		drawcoloredtext(m, stext);
 	}
-	else
+	else {
 		dc.x = m->ww;
-	if((dc.w = dc.x - x) > bh) {
-		dc.x = x;
-		if(m->sel) {
-			col = m == selmon ? dc.sel : dc.norm;
-			drawtext(m->sel->name, col, False);
-			drawsquare(m->sel->isfixed, m->sel->isfloating, False, col);
-		}
-		else
-			drawtext(NULL, dc.norm, False);
+		m->titlebarbegin=dc.x;
 	}
+
+	for(c = m->clients; c && !ISVISIBLE(c); c = c->next);
+	firstvis = c;
+
+	col = m == selmon ? dc.sel : dc.norm;
+	dc.w = dc.x - x;
+	dc.x = x;
+
+	if(n > 0) {
+		mw = dc.w / n;
+		extra = 0;
+		seldc = dc;
+		i = 0;
+
+		while(c) {
+			lastvis = c;
+			tw = TEXTW(c->name);
+			if(tw < mw) extra += (mw - tw); else i++;
+			for(c = c->next; c && !ISVISIBLE(c); c = c->next);
+ 		}
+
+		if(i > 0) mw += extra / i;
+
+		c = firstvis;
+		x = dc.x;
+	}
+	m->titlebarbegin=dc.x;
+	while(dc.w > bh) {
+		if(c) {
+			ow = dc.w;
+			tw = TEXTW(c->name);
+			dc.w = MIN(ow, tw);
+
+			if(dc.w > mw) dc.w = mw;
+			if(m->sel == c) seldc = dc;
+			if(c == lastvis) dc.w = ow;
+
+			drawtext(c->name, col, False);
+			if(c != firstvis) drawvline(col);
+			drawsquare(c->isfixed, c->isfloating, False, col);
+
+			dc.x += dc.w;
+			dc.w = ow - dc.w;
+			for(c = c->next; c && !ISVISIBLE(c); c = c->next);
+		} else {
+ 			drawtext(NULL, dc.norm, False);
+			break;
+		}
+	}
+
+	if(m == selmon && m->sel && ISVISIBLE(m->sel)) {
+		dc = seldc;
+		drawtext(m->sel->name, col, True);
+		drawsquare(m->sel->isfixed, m->sel->isfloating, True, col);
+	}
+
 	XCopyArea(dpy, dc.drawable, m->barwin, dc.gc, 0, 0, m->ww, bh, 0, 0);
 	XSync(dpy, False);
 }
@@ -877,7 +962,7 @@ drawsquare(Bool filled, Bool empty, Bool invert, unsigned long col[ColLast]) {
 }
 
 void
-drawtext(const char *text, unsigned long col[ColLast], Bool invert) {
+drawtext2(const char *text, unsigned long col[ColLast], Bool invert, Bool pad) {
 	char buf[256];
 	int i, x, y, h, len, olen;
 
@@ -888,7 +973,7 @@ drawtext(const char *text, unsigned long col[ColLast], Bool invert) {
 	olen = strlen(text);
 	h = dc.font.ascent + dc.font.descent;
 	y = dc.y + (dc.h / 2) - (h / 2) + dc.font.ascent;
-	x = dc.x + (h / 2);
+	x = dc.x + ((pad ? (dc.font.ascent + dc.font.descent) : 0) / 2);
 	/* shorten text if necessary */
 	for(len = MIN(olen, sizeof buf); len && textnw(text, len) > dc.w - h; len--);
 	if(!len)
@@ -901,6 +986,45 @@ drawtext(const char *text, unsigned long col[ColLast], Bool invert) {
 		XmbDrawString(dpy, dc.drawable, dc.font.set, dc.gc, x, y, buf, len);
 	else
 		XDrawString(dpy, dc.drawable, dc.gc, x, y, buf, len);
+}
+
+void
+drawvline(unsigned long col[ColLast]) {
+	XGCValues gcv;
+
+	gcv.foreground = col[ColFG];
+	XChangeGC(dpy, dc.gc, GCForeground, &gcv);
+	XDrawLine(dpy, dc.drawable, dc.gc, dc.x, dc.y, dc.x, dc.y + (dc.font.ascent + dc.font.descent + 2));
+}
+
+void
+drawcoloredtext(Monitor *m, char *text) {
+	Bool first=True;
+	char *buf = text, *ptr = buf, c = 1;
+	unsigned long *col = barcolors[0];
+	int i, ox = dc.x;
+
+	while( *ptr ) {
+		for( i = 0; *ptr < 0 || *ptr > NumColors; i++, ptr++);
+		if( !*ptr ) break;
+		c=*ptr;
+		*ptr=0;
+		if( i ) {
+			dc.w = m->ww - dc.x;
+			drawtext2(buf, col, False, first);
+			dc.x += textnw(buf, i);// + textnw(&c,1);
+			if( first ) dc.x += ( dc.font.ascent + dc.font.descent ) / 2;
+			first = False;
+		} else if( first ) {
+			ox = dc.x += textnw(&c,1);
+		}
+		*ptr = c;
+		col = barcolors[ c-1 ];
+		buf = ++ptr;
+	}
+	//if( !first ) dc.x-=(dc.font.ascent+dc.font.descent)/2;
+	drawtext2(buf, col, False, False);
+	dc.x = ox;
 }
 
 void
@@ -953,6 +1077,50 @@ focus(Client *c) {
 		XSetInputFocus(dpy, root, RevertToPointerRoot, CurrentTime);
 	selmon->sel = c;
 	drawbars();
+}
+
+void
+focusonclick(const Arg *arg) {
+	int x, w, mw = 0, tw, n = 0, i = 0, extra = 0;
+	Monitor *m = selmon;
+	Client *c, *firstvis;
+
+	for(c = m->clients; c && !ISVISIBLE(c); c = c->next);
+	firstvis = c;
+	
+	for(c = m->clients; c; c = c->next)
+		if (ISVISIBLE(c))
+		    n++;
+	
+	if(n > 0) {
+		mw = (m->titlebarend - m->titlebarbegin) / n;
+		c = firstvis;
+		while(c) {
+			tw = TEXTW(c->name);
+			if(tw < mw) extra += (mw - tw); else i++;
+			for(c = c->next; c && !ISVISIBLE(c); c = c->next);
+ 		}
+		if(i > 0) mw += extra / i;
+	}
+
+	x=m->titlebarbegin;
+
+	c = firstvis;
+        while(x < m->titlebarend) {
+		if(c) {
+			w=MIN(TEXTW(c->name), mw);
+			if (x < arg->i && x+w > arg->i) {
+				focus(c);
+				restack(selmon);
+				break;
+			} else
+				x+=w;
+
+			for(c = c->next; c && !ISVISIBLE(c); c = c->next);
+		} else {
+			break;
+		}
+        }
 }
 
 void
@@ -1795,6 +1963,12 @@ setup(void) {
 	cursor[CurResize] = XCreateFontCursor(dpy, XC_sizing);
 	cursor[CurMove] = XCreateFontCursor(dpy, XC_fleur);
 	/* init appearance */
+	unsigned int c;
+	for(c=0; c<NumColors; c++) {
+		barcolors[c][ColBorder] = getcolor( colors[c][ColBorder] );
+		barcolors[c][ColFG] = getcolor( colors[c][ColFG] );
+		barcolors[c][ColBG] = getcolor( colors[c][ColBG] );
+	}
 	dc.norm[ColBorder] = getcolor(normbordercolor);
 	dc.norm[ColBG] = getcolor(normbgcolor);
 	dc.norm[ColFG] = getcolor(normfgcolor);
