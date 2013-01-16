@@ -2532,6 +2532,7 @@ updatesystray(void) {
 	Client *i;
 	unsigned int x = selmon->mx + selmon->mw;
 	unsigned int w = 1;
+	Atom net_wm_type_dock = XInternAtom(dpy, "_NET_WM_WINDOW_TYPE_DOCK", False);
 
 	if(!showsystray)
 		return;
@@ -2547,6 +2548,9 @@ updatesystray(void) {
 		XSelectInput(dpy, systray->win, SubstructureNotifyMask);
 		XChangeProperty(dpy, systray->win, netatom[NetSystemTrayOrientation], XA_CARDINAL, 32,
 				PropModeReplace, (unsigned char *)&systrayorientation, 1);
+		/* mark it as a dock window, for proper compositing */
+		XChangeProperty(dpy, systray->win, netatom[NetWMWindowType], XA_ATOM, 32,
+				PropModeReplace, (unsigned char*)&net_wm_type_dock, 1);
 		XChangeWindowAttributes(dpy, systray->win, CWEventMask | CWOverrideRedirect | CWBackPixel, &wa);
 		XMapRaised(dpy, systray->win);
 		XSetSelectionOwner(dpy, netatom[NetSystemTray], systray->win, CurrentTime);
