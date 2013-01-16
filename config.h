@@ -64,6 +64,7 @@ static const Layout layouts[] = {
 /* commands */
 static const char *dmenucmd[] = { "dmenu_run", "-fn", font, "-nb", normbgcolor, "-nf", normfgcolor, "-sb", selbgcolor, "-sf", selfgcolor, NULL };
 static const char *termcmd[]  = { "randbgterm", NULL };
+static const char *lockcmd[] = { "xautolock", "-locknow", NULL };
 
 static Key keys[] = {
 	/* modifier                     key        function        argument */
@@ -99,8 +100,9 @@ static Key keys[] = {
 	TAGKEYS(                        XK_7,                      6)
 	TAGKEYS(                        XK_8,                      7)
 	TAGKEYS(                        XK_9,                      8)
-	{ MODKEY|ShiftMask,             XK_q,      quit,           {0} },
+	{ MODKEY|ControlMask,           XK_q,      quit,           {0} },
 	{ MODKEY|ControlMask,           XK_r,      quit,           {.i = 1 } }, /* restart */
+	{ MODKEY|ControlMask,           XK_l,      spawn,          {.v = lockcmd } },
 };
 
 /* button definitions */
