@@ -36,6 +36,9 @@ static const Rule rules[] = {
 	{ "Gimp",     NULL,       NULL,       0,            True,        -1 },
 	{ "Pidgin",   NULL,       NULL,       0,            True,        -1 },
 	{ "qemu-",    NULL,       NULL,       0,            True,        -1 },
+	{ "QEMU",     NULL,       NULL,       0,            True,        -1 },
+	{ "xpad",     NULL,       NULL,       0,            True,        -1 },
+	{ "Chromium", NULL,       "Task Manager - Chromium", 0, True,    -1 },
 };
 
 /* layout(s) */
