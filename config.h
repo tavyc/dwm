@@ -39,6 +39,7 @@ static const Rule rules[] = {
 	{ "QEMU",     NULL,       NULL,       0,            True,        -1 },
 	{ "xpad",     NULL,       NULL,       0,            True,        -1 },
 	{ "Chromium", NULL,       "Task Manager - Chromium", 0, True,    -1 },
+	{ "Qalculate", NULL,      NULL,       0,            True,        -1 },
 };
 
 /* layout(s) */
